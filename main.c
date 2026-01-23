@@ -455,8 +455,8 @@ View get_updated_view(void) {
 		height = (float)GetMonitorHeight(monitor);
 	}
 	else {
-		width = GetScreenWidth();
-		height = GetScreenHeight();
+		width = (float)GetScreenWidth();
+		height = (float)GetScreenHeight();
 	}
 
 	result.scale = 0.5f*(width/1440.0f + height/900.0f);
@@ -473,7 +473,7 @@ static void calculate_bullet_count_and_angle_span(Player *player, Game_Parameter
 	float wide_angle_span = 2.0*PI / 4.0f;
 	float t = player->shoot_charge_t;
 	float comeback_factor = calculate_player_comeback_factor(player, game_params);
-	*count_out = (player->energy * (0.25f + 0.75f*comeback_factor)) / game_params->bullet_energy_cost_fan;
+	*count_out = (int)((player->energy * (0.25f + 0.75f*comeback_factor)) / game_params->bullet_energy_cost_fan);
 	*angle_span_out = Lerp(wide_angle_span, narrow_angle_span, t);
 }
 
@@ -641,10 +641,10 @@ static void virtual_input_update(Virtual_Input *input) {
 			if (IsGamepadButtonDown(gamepad_number, GAMEPAD_BUTTON_LEFT_FACE_RIGHT)) direction_keys.x += 1.0f;
 			if (IsGamepadButtonDown(gamepad_number, GAMEPAD_BUTTON_LEFT_FACE_UP)) direction_keys.y -= 1.0f;
 			if (IsGamepadButtonDown(gamepad_number, GAMEPAD_BUTTON_LEFT_FACE_DOWN)) direction_keys.y += 1.0f;
-			common->direction = Vector2Add(common->direction, direction_keys);	
+			common->direction = Vector2Add(common->direction, direction_keys);
 		}
 		else {
-			
+
 			Vector2 direction = {0.0f, 0.0f};
 
 			if (IsKeyDown(dev->keys.key_left))  direction.x  = -1.0f;
@@ -733,7 +733,7 @@ static void game_init(Game_State *game_state) {
 
 	InitWindow(1024, 768, title);
 	HideCursor();
-	ToggleFullscreen();
+	// ToggleFullscreen();
 
 	SetExitKey(0);
 	SetTargetFPS(60);
@@ -752,7 +752,7 @@ static void game_init(Game_State *game_state) {
 		params->key_text = "Arrow Keys + Right CTRL";
 		params->sound_pop = LoadSound("resources/player_1_pop.wav");
 		params->sound_hit = LoadSound("resources/player_1_hit.wav");
-		params->color = (Color){240.0f, 120.0f, 0.0f, 255.0f};
+		params->color = (Color){240, 120, 0, 255};
 
 		params = &game_state->players[1].params;
 
@@ -761,7 +761,7 @@ static void game_init(Game_State *game_state) {
 		params->key_text = "W,A,S,D + Left CTRL";
 		params->sound_pop = LoadSound("resources/player_2_pop.wav");
 		params->sound_hit = LoadSound("resources/player_2_hit.wav");
-		params->color = (Color){0.0f, 120.0f, 240.0f, 255.0f};
+		params->color = (Color){0, 120, 240, 255};
 
 		params = &game_state->players[2].params;
 
@@ -770,7 +770,7 @@ static void game_init(Game_State *game_state) {
 		params->key_text = "I,J,K,L + U";
 		params->sound_pop = LoadSound("resources/player_2_pop.wav");
 		params->sound_hit = LoadSound("resources/player_2_hit.wav");
-		params->color = (Color){40.0f, 220.0f, 80.0f, 255.0f};
+		params->color = (Color){40, 220, 80, 255};
 
 		params = &game_state->players[3].params;
 
@@ -779,7 +779,7 @@ static void game_init(Game_State *game_state) {
 		params->key_text = "Num 8,4,5,6 + Num 7";
 		params->sound_pop = LoadSound("resources/player_1_pop.wav");
 		params->sound_hit = LoadSound("resources/player_1_hit.wav");
-		params->color = (Color){180.0f, 50.0f, 220.0f, 255.0f};
+		params->color = (Color){180, 50, 220, 255};
 	}
 	game_state->sound_win = LoadSound("resources/win.wav");
 
@@ -792,7 +792,7 @@ static void game_init(Game_State *game_state) {
 	uint64_t random_state = time(0);
 
 	{
-		long t = time(NULL);
+		time_t t = time(NULL);
 		random_state ^= (t*13) ^ (t>>4);
 	}
 	game_state->random_state = random_state;
@@ -826,14 +826,15 @@ static void game_init(Game_State *game_state) {
 static void game_update(Game_State *game_state, float dt) {
 
 	Game_Parameters *game_params = &game_state->params;
-	
+
 	dt *= game_state->time_scale;
 	game_state->game_play_time += dt;
 
 	// Slow motion
-	if (false && game_state->slow_motion_t < 1.0f) {
+	#if 0
+	if (game_state->slow_motion_t < 1.0f) {
 		game_state->slow_motion_t += game_params->slowdowns_per_second*dt;
-	
+
 		float t = game_state->slow_motion_t;
 		float slow_motion_factor;
 
@@ -861,6 +862,7 @@ static void game_update(Game_State *game_state, float dt) {
 		// Apply slow motion
 		dt *= slow_motion_factor;
 	}
+	#endif
 
 	for (int player_index = 0; player_index < game_params->num_players; ++player_index) {
 		Player *player = &game_state->players[player_index];
@@ -1002,7 +1004,7 @@ static void game_update_fixed(Game_State *game_state) {
 					float half_overlap = 0.5f*(distance - radii_sum);
 
 					float inv_distance = 1.0f/distance;
-					
+
 					cumulative_collision_overlap += 2.0f*half_overlap*inv_distance;
 
 					player1->position = player1_to_position = Vector2Add(player1_to_position, Vector2Scale(position_difference, half_overlap*inv_distance));
@@ -1083,7 +1085,7 @@ static void game_update_fixed(Game_State *game_state) {
 				if (edge_offset < 0) {
 					target_position.x = view.width - player_radius;
 
-					cumulative_edge_bounce += fabs(player->velocity.x);
+					cumulative_edge_bounce += fabsf(player->velocity.x);
 
 					player->velocity.x = bounce_back_factor*(player->velocity.x + edge_offset);
 				}
@@ -1094,7 +1096,7 @@ static void game_update_fixed(Game_State *game_state) {
 				if (edge_offset < 0) {
 					target_position.x = 0 + player_radius;
 
-					cumulative_edge_bounce += fabs(player->velocity.x);
+					cumulative_edge_bounce += fabsf(player->velocity.x);
 
 					player->velocity.x = bounce_back_factor*(player->velocity.x + edge_offset);
 				}
@@ -1107,7 +1109,7 @@ static void game_update_fixed(Game_State *game_state) {
 				if (edge_offset < 0) {
 					target_position.y = view.height - player_radius;
 
-					cumulative_edge_bounce += fabs(player->velocity.y);
+					cumulative_edge_bounce += fabsf(player->velocity.y);
 
 					player->velocity.y = bounce_back_factor*(player->velocity.y + edge_offset);
 
@@ -1119,7 +1121,7 @@ static void game_update_fixed(Game_State *game_state) {
 				if (edge_offset < 0) {
 					target_position.y = 0 + player_radius;
 
-					cumulative_edge_bounce += fabs(player->velocity.y);
+					cumulative_edge_bounce += fabsf(player->velocity.y);
 
 					player->velocity.y = bounce_back_factor*(player->velocity.y + edge_offset);
 				}
@@ -1209,14 +1211,15 @@ static void game_update_fixed(Game_State *game_state) {
 
 					if (opponent->health <= 0) {
 
-						float bullet_speed = 8 + (2*(opponent->energy/game_params->bullet_energy_cost_ring));
+						float bullet_ring_speed = 8 + (2*(opponent->energy/game_params->bullet_energy_cost_ring));
+						int bullet_ring_count = (int)bullet_ring_speed;
 
 						spawn_bullet_ring_ex(
 							opponent,
 							game_state,
-							bullet_speed,
+							bullet_ring_count,
 							200.0f + 10.0f*opponent->energy,
-							bullet_speed * 0.025f
+							bullet_ring_speed * 0.025f
 						);
 
 						opponent->death_animation_t = 0.0f;
@@ -1278,7 +1281,7 @@ static void game_update_menu(Game_State *game_state, float dt) {
 				menu->selected_index += menu->item_count + item_change_y;
 				menu->selected_index %= menu->item_count;
 			}
-			game_state->menu_item_cooldown = current_time + 0.2f;
+			game_state->menu_item_cooldown = (float)current_time + 0.2f;
 		}
 		else {
 			item_change_y = 0;
@@ -1442,7 +1445,7 @@ static void game_draw(Game_State *game_state) {
 
 	BeginDrawing();
 
-	ClearBackground((Color){game_state->color_red, game_state->color_green, game_state->color_blue, 255});
+	ClearBackground((Color){(uint8_t)game_state->color_red, (uint8_t)game_state->color_green, (uint8_t)game_state->color_blue, 255});
 
 	View view = game_state->view;
 	Vector2 screen = (Vector2){view.screen_width, view.screen_height};
@@ -1453,8 +1456,8 @@ static void game_draw(Game_State *game_state) {
 	//
 	if (game_state->title_alpha > 0) {
 
-		float title_gray = 160;
-		Color title_color = (Color){title_gray, title_gray, title_gray, game_state->title_alpha*255.0f};
+		uint8_t title_gray = 160;
+		Color title_color = (Color){title_gray, title_gray, title_gray, (uint8_t)(game_state->title_alpha*255)};
 
 		float font_size = 100.0f*view.scale;
 		float font_spacing = 0.15f*font_size;
@@ -1582,7 +1585,7 @@ static void game_draw(Game_State *game_state) {
 
 		Vector2 player_position_screen = interpolate_movement(player->position, player->velocity, step_t);
 		player_position_screen = Vector2Scale(player_position_screen, view.scale);
-		
+
 		// Draw player's body
 		DrawCircleV(player_position_screen, player_radius_screen, parameters->color);
 
@@ -1614,7 +1617,7 @@ static void game_draw(Game_State *game_state) {
 				// DrawCircleV(spot, player_radius*0.2f, parameters->color);
 
 				DrawTriangle(arrow_right, arrow_point, arrow_left, parameters->color);
-				
+
 				angle += angle_quantum;
 			}
 		}
@@ -1689,7 +1692,7 @@ static void game_draw(Game_State *game_state) {
 		float outer_radius = t1*ring_radius;
 		float inner_radius = t2*ring_radius;
 
-		float start_angle = ring.angle - 60.0;
+		float start_angle = ring.angle - 60.0f;
 		float end_angle = ring.angle + 60.0f;
 
 		ring.position = Vector2Scale(ring.position, view.scale);
@@ -1737,7 +1740,7 @@ static void game_draw(Game_State *game_state) {
 			}
 		}
 		else {
-			player->controls_text_timeout = game_state->game_play_time + 5.0;
+			player->controls_text_timeout = game_state->game_play_time + 5.0f;
 		}
 	}
 
@@ -1747,9 +1750,9 @@ static void game_draw(Game_State *game_state) {
 
 		assert(triumphant_player < game_params->num_players);
 
-		Color screen_overlay_color = (Color){255.0f, 255.0f, 255.0f, 192.0f};
+		Color screen_overlay_color = (Color){255, 255, 255, 192};
 
-		DrawRectangle(0, 0, screen.x, screen.y, screen_overlay_color);
+		DrawRectangle(0, 0, (int)screen.x, (int)screen.y, screen_overlay_color);
 
 		Vector2 screen_center = (Vector2){0.5f*screen.x, 0.5f*screen.y};
 
@@ -1787,7 +1790,7 @@ static void game_draw(Game_State *game_state) {
 				padding
 			);
 
-			Vector2 draw_position = {0, screen_center.y - 0.5*colored_background_height};
+			Vector2 draw_position = {0, screen_center.y - 0.5f*colored_background_height};
 
 			// Draw colored rectangle behind win text
 			DrawRectangleV(draw_position, (Vector2){screen.x, colored_background_height}, win_box_color);
