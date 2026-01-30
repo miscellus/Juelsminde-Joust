@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en-us">
+<head>
+    <meta charset="utf-8" />
+    <meta content="text/html; charset=utf-8" http-equiv="Content-Type" />
+    <title>Juelsminde Joust | miscellus.com</title>
+    <style>
+        *, *:before, *:after { box-sizing: border-box; }
+        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; pointer-events: none; }
+        canvas { position: relative; width: 100%; height: 100%; background-color: lightgray; }
+    </style>
+</head>
+<body>
+    <canvas id="canvasElement" oncontextmenu="event.preventDefault()" onclick="event.preventDefault()" tabindex="-1"></canvas>
+    <script>
+        var Module = Module || {};
+        canvasElement.addEventListener("webglcontextlost", (e) => {
+            alert("WebGL context lost. You will need to reload the page.");
+            e.preventDefault();
+        }, false);
+        window.addEventListener("keydown", function(e) {
+            if(["Space","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].indexOf(e.code) >= 0) e.preventDefault();
+        }, false);
+        document.addEventListener("DOMContentLoaded", function(){
+            Module.print = console.log;
+            Module.canvas = canvasElement;
+            Module.requestFullscreen = (a, b) => Browser?.requestFullscreen?.(a, b);
+            Module.setStatus = e => {};
+            Module.totalDependencies = 0;
+            Module.monitorRunDependencies = e => this.totalDependencies = Math.max(this.totalDependencies, e);
+        });
+    </script>
+    {{{ SCRIPT }}}
+</body>
+</html>

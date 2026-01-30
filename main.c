@@ -7,6 +7,12 @@
 
 #include <raylib.h>
 
+#if defined(PLATFORM_WEB)
+    #include <emscripten/emscripten.h>
+#endif
+
+void UpdateDrawFrame(void *game_state_vp);     // Update and Draw one frame
+
 #ifdef __APPLE__
 #include "CoreFoundation/CoreFoundation.h"
 #endif
@@ -227,12 +233,19 @@ typedef struct Game_State {
 	bool show_menu;
 	float menu_item_cooldown;
 	Menu *menu;
+
+	Menu main_menu;
+	// Menu network_game_menu;
+	Menu settings_menu;
+	Menu gameplay_settings_menu;
+	Menu video_settings_menu;
+	Menu controls_menu;
 } Game_State;
 
 static Game_Parameters game_params_for_new_game = {
-	.num_players = 4,
+	.num_players = 3,
 
-	.starting_health = 2,
+	.starting_health = 10,
 	.minimum_radius = 32.0f,
 	.acceleration_force = 1100.0f,
 	.friction = 0.94f,
@@ -426,6 +439,7 @@ void game_reset(Game_State *game_state, View view) {
 		aim_dir = Vector2NormalizeOrZero(aim_dir);
 
 		memset(player, 0, (char *)&player->params - (char *)player);
+		player->energy = game_state->params.bullet_energy_cost_fan * 4.0f;
 		player->position = (Vector2){ column_width*(player_index + 0.5f), view.height / 2.0f };
 		player->shoot_angle = atan2f(aim_dir.y, aim_dir.x);
 		player->health = game_params->starting_health;
@@ -562,7 +576,7 @@ static const Virtual_Input_Key_Map global_key_maps[] = {
 		KEY_RIGHT,
 		KEY_UP,
 		KEY_DOWN,
-		KEY_RIGHT_CONTROL,
+		KEY_ENTER,
 		KEY_ESCAPE,
 	},
 	{
@@ -570,7 +584,7 @@ static const Virtual_Input_Key_Map global_key_maps[] = {
 		KEY_D,
 		KEY_W,
 		KEY_S,
-		KEY_LEFT_CONTROL,
+		KEY_Q,
 		KEY_ESCAPE,
 	},
 	{
@@ -702,8 +716,8 @@ static void read_file_into_c_string(const char *filepath, char **contents_out, s
 	fclose(file);
 }
 
-extern int glfwUpdateGamepadMappings(const char *string);
-extern int glfwGetError(const char **description);
+// extern int glfwUpdateGamepadMappings(const char *string);
+// extern int glfwGetError(const char **description);
 
 
 
@@ -749,7 +763,7 @@ static void game_init(Game_State *game_state) {
 
 		*params = (Player_Parameters){0};
 		params->input_device = &input->devices[0];
-		params->key_text = "Arrow Keys + Right CTRL";
+		params->key_text = "Arrow Keys + Enter";
 		params->sound_pop = LoadSound("resources/player_1_pop.wav");
 		params->sound_hit = LoadSound("resources/player_1_hit.wav");
 		params->color = (Color){240, 120, 0, 255};
@@ -758,7 +772,7 @@ static void game_init(Game_State *game_state) {
 
 		*params = (Player_Parameters){0};
 		params->input_device = &input->devices[1];
-		params->key_text = "W,A,S,D + Left CTRL";
+		params->key_text = "W,A,S,D + Q";
 		params->sound_pop = LoadSound("resources/player_2_pop.wav");
 		params->sound_hit = LoadSound("resources/player_2_hit.wav");
 		params->color = (Color){0, 120, 240, 255};
@@ -797,7 +811,7 @@ static void game_init(Game_State *game_state) {
 	}
 	game_state->random_state = random_state;
 
-#if 1
+#if 0
 	{
 		char *custom_sdl_gamepad_mappings;
 		size_t contents_length;
@@ -1898,6 +1912,78 @@ static void game_draw(Game_State *game_state) {
 	EndDrawing();
 }
 
+void UpdateDrawFrame(void *game_state_vp)
+{
+	Game_State *game_state = (Game_State *)game_state_vp;
+	Virtual_Input *input = &game_state->input;
+
+
+	if (IsWindowFocused()) {
+
+		bool toggle_fullscreen = IsKeyPressed(KEY_ENTER) && (IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT));
+		bool window_resized = IsWindowResized();
+
+		if (toggle_fullscreen) {
+			ToggleFullscreen();  // modifies window size when scaling!
+			window_resized = true;
+		}
+
+		if (window_resized) {
+			game_state->view = get_updated_view();
+			game_constrain_players_to_view(game_state);
+		}
+
+		virtual_input_update(input);
+
+		// Menu button handling
+		//
+		if (is_game_over(game_state) && !game_state->show_menu && input->input_common.buttons[VIRTUAL_BUTTON_MENU].is_pressed) {
+			game_reset(game_state, game_state->view);
+
+			// NOTE(jakob): Since we are staying in the same frame, we we fake-unpress the menu button;
+			// TODO(jakob): Figure out something better
+			input->input_common.buttons[VIRTUAL_BUTTON_MENU].is_pressed = false;
+		}
+		else if (input->input_common.buttons[VIRTUAL_BUTTON_MENU].is_pressed) {
+			if (game_state->show_menu) {
+				Menu *parent = game_state->menu->parent;
+				if (parent) {
+					game_state->menu = parent;
+				}
+				else {
+					game_state->show_menu = false;
+				}
+			}
+			else {
+				game_state->show_menu = true;
+				game_state->menu = &game_state->main_menu;
+			}
+		}
+
+
+		float dt = GetFrameTime();
+		game_state->time_step_accumulator += dt;
+		int num_fixed_time_steps = (int)(game_state->time_step_accumulator / TIME_STEP_FIXED);
+		game_state->time_step_accumulator -= num_fixed_time_steps*TIME_STEP_FIXED;
+		game_state->time_step_t = game_state->time_step_accumulator / TIME_STEP_FIXED;
+
+		if (!game_state->show_menu) {
+			for (int i = 0; i < num_fixed_time_steps; ++i) {
+				game_update_fixed(game_state);
+			}
+			game_update(game_state, dt);
+		}
+		else {
+			game_update_menu(game_state, dt);
+		}
+
+	}
+
+	// printf("Time step interp: %.2f\n", game_state->time_step_t);
+	// fflush(stdout);
+	game_draw(game_state);
+}
+
 #define MENU_DEF(MMM, ...) \
 	MMM.items = (Menu_Item []){__VA_ARGS__}; \
 	MMM.item_count = sizeof((Menu_Item []){__VA_ARGS__})/sizeof(Menu_Item);
@@ -1910,26 +1996,18 @@ int main(void)
 
 	game_init(game_state);
 
-
-	Menu main_menu = {0};
-	Menu network_game_menu = {0};
-	Menu settings_menu = {0};
-
-	MENU_DEF(main_menu, 
+	MENU_DEF(game_state->main_menu,
 		{MENU_ITEM_ACTION, "Continue", .u.int_value=MENU_ACTION_CONTINUE},
 		{MENU_ITEM_ACTION, "New Game", .u.int_value=MENU_ACTION_NEW_GAME},
-		{MENU_ITEM_MENU, "New Network Game", .u.menu_ref = &network_game_menu},
-		{MENU_ITEM_MENU, "Settings", .u.menu_ref = &settings_menu},
+		// {MENU_ITEM_MENU, "New Network Game", .u.menu_ref = &game_state->network_game_menu},
+		{MENU_ITEM_MENU, "Settings", .u.menu_ref = &game_state->settings_menu},
 		{MENU_ITEM_ACTION, "Quit", .u.int_value=MENU_ACTION_QUIT},
 	);
 
-	Menu gameplay_settings_menu = {0};
-	Menu video_settings_menu = {0};
-	Menu controls_menu = {0};
-
+#if 0
 	int ip24_31 = 192, ip16_23 = 168, ip8_15 = 0, ip0_7 = 0;
 
-	MENU_DEF(network_game_menu,
+	MENU_DEF(game_state->network_game_menu,
 		{MENU_ITEM_MENU_BACK, "Back", .u = {0}},
 		{MENU_ITEM_INT_RANGE, "Host IP[24-31]", .u.range.int_range = {
 			.value = &ip24_31,
@@ -1953,15 +2031,16 @@ int main(void)
 		}},
 		{MENU_ITEM_ACTION, "Connect to Host", .u.int_value=MENU_ACTION_CONNECT_TO_HOST},
 	);
+#endif
 
-	MENU_DEF(settings_menu,
+	MENU_DEF(game_state->settings_menu,
 		{MENU_ITEM_MENU_BACK, "Back", .u = {0}},
-		{MENU_ITEM_MENU, "Gameplay Settings", .u.menu_ref = &gameplay_settings_menu},
-		{MENU_ITEM_MENU, "Video Settings", .u.menu_ref = &video_settings_menu},
-		{MENU_ITEM_MENU, "Controls", .u.menu_ref = &controls_menu},
+		{MENU_ITEM_MENU, "Gameplay Settings", .u.menu_ref = &game_state->gameplay_settings_menu},
+		{MENU_ITEM_MENU, "Video Settings", .u.menu_ref = &game_state->video_settings_menu},
+		{MENU_ITEM_MENU, "Controls", .u.menu_ref = &game_state->controls_menu},
 	);
 
-	MENU_DEF(controls_menu,
+	MENU_DEF(game_state->controls_menu,
 		{MENU_ITEM_MENU_BACK, "Back", .u = {0}},
 		{MENU_ITEM_BOOL, "Use Gamepad for Orange Player", .u.bool_ref = &game_state->players[0].params.input_device->use_gamepad},
 		{MENU_ITEM_BOOL, "Use Gamepad for Blue Player", .u.bool_ref = &game_state->players[1].params.input_device->use_gamepad},
@@ -1969,7 +2048,7 @@ int main(void)
 		{MENU_ITEM_BOOL, "Use Gamepad for Purple Player", .u.bool_ref = &game_state->players[3].params.input_device->use_gamepad},
 	);
 
-	MENU_DEF(gameplay_settings_menu,
+	MENU_DEF(game_state->gameplay_settings_menu,
 		{MENU_ITEM_MENU_BACK, "Back", .u = {0}},
 		{MENU_ITEM_INT_RANGE, "Number of Players", .u.range.int_range = {
 			.value = &game_params_for_new_game.num_players,
@@ -1984,7 +2063,7 @@ int main(void)
 		{MENU_ITEM_FLOAT, "Time Scale", .u.float_ref = &game_state->time_scale},
 	);
 
-	MENU_DEF(video_settings_menu,
+	MENU_DEF(game_state->video_settings_menu,
 		{MENU_ITEM_MENU_BACK, "Back", .u = {0}},
 		{MENU_ITEM_INT_RANGE, "Background (Red)", .u.range.int_range = {
 			.value = &game_state->color_red,
@@ -2004,77 +2083,16 @@ int main(void)
 		{MENU_ITEM_ACTION, "Full Screen", .action = menu_action_toggle_fullscreen, .u.int_value = MENU_ACTION_FULLSCREEN_TOGGLE},
 	);
 
-	Virtual_Input *input = &game_state->input;
-	game_state->menu = &main_menu;
-	
+	game_state->menu = &game_state->main_menu;
+
+#if defined(PLATFORM_WEB)
+    emscripten_set_main_loop_arg(UpdateDrawFrame, (void *)game_state, 0, 1);
+#else
 	// Main game loop
 	while (game_state->running && !WindowShouldClose()) {
-
-		if (IsWindowFocused()) {
-
-			bool toggle_fullscreen = IsKeyPressed(KEY_ENTER) && (IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT));
-			bool window_resized = IsWindowResized();
-
-			if (toggle_fullscreen) {
-				ToggleFullscreen();  // modifies window size when scaling!
-				window_resized = true;
-			}
-
-			if (window_resized) {
-				game_state->view = get_updated_view();
-				game_constrain_players_to_view(game_state);
-			}
-
-			virtual_input_update(input);
-
-			// Menu button handling
-			//
-			if (is_game_over(game_state) && !game_state->show_menu && input->input_common.buttons[VIRTUAL_BUTTON_MENU].is_pressed) {
-				game_reset(game_state, game_state->view);
-
-				// NOTE(jakob): Since we are staying in the same frame, we we fake-unpress the menu button;
-				// TODO(jakob): Figure out something better
-				input->input_common.buttons[VIRTUAL_BUTTON_MENU].is_pressed = false;
-			}
-			else if (input->input_common.buttons[VIRTUAL_BUTTON_MENU].is_pressed) {
-				if (game_state->show_menu) {
-					Menu *parent = game_state->menu->parent;
-					if (parent) {
-						game_state->menu = parent;
-					}
-					else {
-						game_state->show_menu = false;
-					}
-				}
-				else {
-					game_state->show_menu = true;
-					game_state->menu = &main_menu;
-				}
-			}
-
-
-			float dt = GetFrameTime();
-			game_state->time_step_accumulator += dt;
-			int num_fixed_time_steps = (int)(game_state->time_step_accumulator / TIME_STEP_FIXED);
-			game_state->time_step_accumulator -= num_fixed_time_steps*TIME_STEP_FIXED;
-			game_state->time_step_t = game_state->time_step_accumulator / TIME_STEP_FIXED;
-
-			if (!game_state->show_menu) {
-				for (int i = 0; i < num_fixed_time_steps; ++i) {
-					game_update_fixed(game_state);
-				}
-				game_update(game_state, dt);
-			}
-			else {
-				game_update_menu(game_state, dt);
-			}
-
-		}
-		
-		// printf("Time step interp: %.2f\n", game_state->time_step_t);
-		// fflush(stdout);
-		game_draw(game_state);
+		UpdateDrawFrame((void *)game_state);
 	}
+#endif
 
 	CloseAudioDevice();
 	CloseWindow(); // Close window and OpenGL context
